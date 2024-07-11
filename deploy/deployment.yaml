@@ -1,0 +1,105 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: database-connect
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: database-connect
+      deployment: database-connect
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: database-connect
+        deployment: database-connect
+    spec:
+      volumes:
+        - name: secret-volume
+          secret:
+            secretName: database-connect-creds
+            defaultMode: 420
+        - name: config-volume
+          configMap:
+            name: database-connect-config
+            defaultMode: 420
+        - name: ccache
+          emptyDir: {}
+        - name: config
+          emptyDir: {}
+      containers:
+        - resources: {}
+          terminationMessagePath: /dev/termination-log
+          name: kerberos-authentication
+          env:
+            - name: KRB5CCNAME
+              value: 'FILE:/dev/shm/ccache'
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: ccache
+              mountPath: /dev/shm
+            - name: config
+              mountPath: /etc/krb5.conf.d
+          terminationMessagePolicy: File
+          envFrom:
+            - secretRef:
+                name: database-credentials
+          image: 'image-registry.openshift-image-registry.svc:5000/kerberos-authentication:1.0.0'
+        - resources:
+            limits:
+              cpu: 250m
+              memory: 250Mi
+            requests:
+              cpu: 50m
+              memory: 100Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 10
+            timeoutSeconds: 1
+            periodSeconds: 30
+            successThreshold: 1
+            failureThreshold: 3
+          terminationMessagePath: /dev/termination-log
+          name: dotnet
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 10
+            timeoutSeconds: 1
+            periodSeconds: 30
+            successThreshold: 1
+            failureThreshold: 3
+          env:
+            - name: KRB5CCNAME
+              value: 'FILE:/dev/shm/ccache'
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: secret-volume
+              mountPath: /opt/app-root/secrets
+            - name: config-volume
+              mountPath: /opt/app-root/config
+            - name: ccache
+              mountPath: /dev/shm
+            - name: config
+              mountPath: /etc/krb5.conf.d
+          terminationMessagePolicy: File
+          image: 'image-registry.openshift-image-registry.svc:5000/eforms-uat/database-connect@sha256:b278168999a2b8ae3ecbc6d87f91c33479d85f061f5d74d159a609e5b78bdc73'
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      dnsPolicy: ClusterFirst
+      securityContext: {}
+      schedulerName: default-scheduler
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+      maxSurge: 25%
+  revisionHistoryLimit: 10
+  progressDeadlineSeconds: 600
+ 
